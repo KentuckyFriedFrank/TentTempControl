@@ -77,10 +77,13 @@ char fanSpeed[4] = "0";
 char prevFanSpeed[4]= "0";
 //hold current fan speed 0-255
 int currentFanValue = 0;
+int previousFanValue = 0;
 //fan speed from last loop
 int previousFanSpeed = currentFanValue;
 //how much to increase/decrease fan speed each push. Out of 255
 int fanIncrement = 10;
+//Max fan speed 100-0%
+int fanMax = 50;
 
 #include "DHT.h"
 #define DHTPIN 22     // what digital pin we're connected to
@@ -101,10 +104,20 @@ int fanIncrement = 10;
 // tweak the timings for faster processors.  This parameter is no longer needed
 // as the current DHT reading algorithm adjusts itself to work on faster procs.
 
+DHT dht(DHTPIN, DHTTYPE);
+
 char currentTemp[4] = "0";
 char previousTemp[4] = "0";
+int prevTempValue = 0;
 
-DHT dht(DHTPIN, DHTTYPE);
+int tempMin = 65;   // the temperature to start the fan
+int tempMax = 85;   // the maximum temperature when fan is at 100%
+
+// will store last time temp was updated
+long previousMillis = 0;        
+// the follow variables is a long because the time, measured in miliseconds,
+// will quickly become a bigger number than can be stored in an int.
+long interval = 1000;           // interval at which to blink (milliseconds)
 
 void setup(){
   
@@ -127,62 +140,50 @@ void setup(){
   //Current Temp
   Tft.drawString("Temp: ",0,20,2,BLUE);
   Tft.drawString("*F",210,20,2,BLUE);
+
+  //convert fan speed % into PWM value
+  fanMax = round(((fanMax * 255) / 100) + .5);
+  Serial.print(fanMax);
 }
 
 
-int prevTempValue;
+
 void loop(){
-  int temp = GetTemp();
-  if(prevTempValue != temp){
-    String(temp).toCharArray(currentTemp, 4);
-    Tft.drawString(previousTemp,170,20,2,BLACK);
-    Tft.drawString(currentTemp,170,20,2,BLUE);
-    String(temp).toCharArray(previousTemp, 4);
-    prevTempValue = temp;
-  }
-  // a point object holds x y and z coordinates
-  Point p = ts.getPoint();
-  p.x = map(p.x, TS_MINX, TS_MAXX, 240, 0);
-  p.y = map(p.y, TS_MINY, TS_MAXY, 320, 0);
-  // we have some minimum pressure we consider 'valid'
-  // pressure of 0 means no pressing!
-  if (p.z > ts.pressureThreshhold){
-    Serial.print("X = "); Serial.print(p.x);
-    Serial.print("\tY = "); Serial.print(p.y);
-    Serial.print("\tPressure = "); Serial.println(p.z);
-    //Increase Fan Zones
-    if( p.x >= incFanSpeedPosX && p.x <= (incFanSpeedPosX + incFanSpeedWidth) && p.y >= incFanSpeedPosY && p.y <= (incFanSpeedPosY + incFanSpeedHight)){
-      if(currentFanValue >= 255){
-      }
-      else{
-        currentFanValue += fanIncrement;
-        if(currentFanValue >= 255){
-          currentFanValue = 255;
-        }
+  unsigned long currentMillis = millis();
+  if(currentMillis - previousMillis > interval) {
+    // save the last time you blinked got temp
+    previousMillis = currentMillis;   
+    int temp = GetTemp();
+    if(isnan(temp)){
+        Tft.drawString("error",0,170,2,RED);
+        delay(1000);
+        Tft.drawString("error",0,170,2,BLUE);
+      return;
+    }
+    if(prevTempValue != temp){
+      String(temp).toCharArray(currentTemp, 4);
+      Tft.drawString(previousTemp,170,20,2,BLACK);
+      Tft.drawString(currentTemp,170,20,2,BLUE);
+      String(temp).toCharArray(previousTemp, 4);
+      prevTempValue = temp;
+      if(temp < tempMin) {   // if temp is lower than minimum temp
+        currentFanValue = 0;
         analogWrite(fanPin, currentFanValue);
-        String(currentFanValue * 100 / 255).toCharArray(fanSpeed, 4);
+        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4);
         Tft.drawString(prevFanSpeed,170,0,2,BLACK);
         Tft.drawString(fanSpeed,170,0,2,BLUE);
-        String(currentFanValue * 100 / 255).toCharArray(prevFanSpeed, 4);
-        //Serial.print("Increase Fan Speed :"); Serial.println(currentFanValue);
-      }
-    }
-    else {
-      if( p.x >= decFanSpeedPosX && p.x <= (decFanSpeedPosX + decFanSpeedWidth) && p.y >= decFanSpeedPosY && p.y <= (decFanSpeedPosY + decFanSpeedHight)){
-        if(currentFanValue <= 0){
+        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
+      } 
+      else if(temp >= tempMin) {  // if temperature is higher than minimum temp
+        currentFanValue = map(temp, tempMin, tempMax, 0, fanMax); // the actual speed of fan
+        if(currentFanValue > fanMax){
+          currentFanValue = fanMax;
         }
-        else{
-          currentFanValue -= fanIncrement;
-          if(currentFanValue <= 0){
-            currentFanValue = 0;
-          }
-          analogWrite(fanPin, currentFanValue);
-          String(currentFanValue * 100 / 255).toCharArray(fanSpeed, 4);
-          Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-          Tft.drawString(fanSpeed,170,0,2,BLUE);
-          String(currentFanValue * 100 / 255).toCharArray(prevFanSpeed, 4);
-          //Serial.print("Decrease Fan Speed :"); Serial.println(currentFanValue);
-        }
+        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
+        Tft.drawString(prevFanSpeed,170,0,2,BLACK);
+        Tft.drawString(fanSpeed,170,0,2,BLUE);
+        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
+        analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed
       }
     }
   }
@@ -191,16 +192,16 @@ void loop(){
 int GetTemp() {
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  float h = dht.readHumidity();
+  //float h = dht.readHumidity();
   // Read temperature as Celsius (the default)
-  float t = dht.readTemperature();
+  //float t = dht.readTemperature();
   // Read temperature as Fahrenheit (isFahrenheit = true)
   float f = dht.readTemperature(true);
   
   // Compute heat index in Fahrenheit (the default)
-  float hif = dht.computeHeatIndex(f, h);
+  //float hif = dht.computeHeatIndex(f, h);
   // Compute heat index in Celsius (isFahreheit = false)
-  float hic = dht.computeHeatIndex(t, h, false);
+  //float hic = dht.computeHeatIndex(t, h, false);
 
 //  Serial.print("Humidity: ");
 //  Serial.print(h);
@@ -208,8 +209,8 @@ int GetTemp() {
 //  Serial.print("Temperature: ");
 //  Serial.print(t);
 //  Serial.print(" *C ");
-//  Serial.print(f);
-//  Serial.print(" *F\t");
+  Serial.print(f);
+  Serial.println(" *F\t");
 //  Serial.print("Heat index: ");
 //  Serial.print(hic);
 //  Serial.print(" *C ");
