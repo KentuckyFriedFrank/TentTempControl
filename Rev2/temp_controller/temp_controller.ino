@@ -60,8 +60,10 @@
 // The 2.8" TFT Touch shield has 300 ohms across the X plate
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
-int fanPin = 44;    // LED connected to digital pin 9
-
+// PWM pin for fan 1
+int fanPin = 44;   
+//Fan that controls fan transistor
+int fanPowerPin = 24;
 //Increase Fan Speed Draw Parameters
 int incFanSpeedPosX = 0;
 int incFanSpeedPosY = 250;
@@ -84,6 +86,7 @@ int previousFanSpeed = currentFanValue;
 int fanIncrement = 10;
 //Max fan speed 100-0%
 int fanMax = 50;
+
 
 #include "DHT.h"
 #define DHTPIN 22     // what digital pin we're connected to
@@ -110,7 +113,7 @@ char currentTemp[4] = "0";
 char previousTemp[4] = "0";
 int prevTempValue = 0;
 
-int tempMin = 65;   // the temperature to start the fan
+int tempMin = 78;   // the temperature to start the fan
 int tempMax = 85;   // the maximum temperature when fan is at 100%
 
 // will store last time temp was updated
@@ -120,10 +123,9 @@ long previousMillis = 0;
 long interval = 1000;           // interval at which to blink (milliseconds)
 
 void setup(){
-  
   Serial.begin(9600);
-
-  dht.begin();
+  
+  dht.begin(); //init DHT
   
   Tft.init();  //init TFT library
   
@@ -140,6 +142,9 @@ void setup(){
   //Current Temp
   Tft.drawString("Temp: ",0,20,2,BLUE);
   Tft.drawString("*F",210,20,2,BLUE);
+
+  // initialize digital pin as an output.
+  pinMode(fanPowerPin, OUTPUT);
 
   //convert fan speed % into PWM value
   fanMax = round(((fanMax * 255) / 100) + .5);
@@ -169,16 +174,15 @@ void loop(){
       if(temp < tempMin) {   // if temp is lower than minimum temp
         currentFanValue = 0;
         analogWrite(fanPin, currentFanValue);
+        digitalWrite(fanPowerPin, LOW);
         String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4);
         Tft.drawString(prevFanSpeed,170,0,2,BLACK);
         Tft.drawString(fanSpeed,170,0,2,BLUE);
         String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
       } 
       else if(temp >= tempMin) {  // if temperature is higher than minimum temp
+        digitalWrite(fanPowerPin, HIGH);
         currentFanValue = map(temp, tempMin, tempMax, 0, fanMax); // the actual speed of fan
-        if(currentFanValue > fanMax){
-          currentFanValue = fanMax;
-        }
         String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
         Tft.drawString(prevFanSpeed,170,0,2,BLACK);
         Tft.drawString(fanSpeed,170,0,2,BLUE);
