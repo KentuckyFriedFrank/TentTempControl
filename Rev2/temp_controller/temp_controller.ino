@@ -74,6 +74,11 @@ int decFanSpeedPosX = 120;
 int decFanSpeedPosY = 250;
 int decFanSpeedWidth = 110;
 int decFanSpeedHight = 60;
+//Manual button
+int manualPosX = 0;
+int manualPosY = 190;
+int manualWidth = 110;
+int manualHight = 60;
 
 char fanSpeed[4] = "0";
 char prevFanSpeed[4]= "0";
@@ -113,8 +118,8 @@ char currentTemp[4] = "0";
 char previousTemp[4] = "0";
 int prevTempValue = 0;
 
-int tempMin = 78;   // the temperature to start the fan
-int tempMax = 85;   // the maximum temperature when fan is at 100%
+int tempMin = 60;   // the temperature to start the fan
+int tempMax = 72;   // the maximum temperature when fan is at 100%
 
 // will store last time temp was updated
 long previousMillis = 0;        
@@ -139,6 +144,9 @@ void setup(){
   //Decrease Fan Speed
   Tft.drawRectangle(decFanSpeedPosX, decFanSpeedPosY, decFanSpeedWidth,decFanSpeedHight,BLUE);
   Tft.drawString("-",170,270,2,BLUE);
+  //Manual button
+  Tft.drawRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
+  Tft.drawString("MANUAL",10,210,2,BLUE);
   //Current Temp
   Tft.drawString("Temp: ",0,20,2,BLUE);
   Tft.drawString("*F",210,20,2,BLUE);
@@ -151,47 +159,123 @@ void setup(){
   Serial.print(fanMax);
 }
 
-
-
+int mode = 'auto';
+bool manualSelected = false;
+bool autoSelected = true;
 void loop(){
-  unsigned long currentMillis = millis();
-  if(currentMillis - previousMillis > interval) {
-    // save the last time you blinked got temp
-    previousMillis = currentMillis;   
-    int temp = GetTemp();
-    if(isnan(temp)){
-        Tft.drawString("error",0,170,2,RED);
-        delay(1000);
-        Tft.drawString("error",0,170,2,BLUE);
-      return;
-    }
-    if(prevTempValue != temp){
-      String(temp).toCharArray(currentTemp, 4);
-      Tft.drawString(previousTemp,170,20,2,BLACK);
-      Tft.drawString(currentTemp,170,20,2,BLUE);
-      String(temp).toCharArray(previousTemp, 4);
-      prevTempValue = temp;
-      if(temp < tempMin) {   // if temp is lower than minimum temp
-        currentFanValue = 0;
-        analogWrite(fanPin, currentFanValue);
-        digitalWrite(fanPowerPin, LOW);
-        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4);
-        Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-        Tft.drawString(fanSpeed,170,0,2,BLUE);
-        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
-      } 
-      else if(temp >= tempMin) {  // if temperature is higher than minimum temp
-        digitalWrite(fanPowerPin, HIGH);
-        currentFanValue = map(temp, tempMin, tempMax, 0, fanMax); // the actual speed of fan
-        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
-        Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-        Tft.drawString(fanSpeed,170,0,2,BLUE);
-        String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
-        analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed
+  Point p = ts.getPoint();
+  p.x = map(p.x, TS_MINX, TS_MAXX, 240, 0);
+  p.y = map(p.y, TS_MINY, TS_MAXY, 320, 0);
+  //we have some minimum pressure we consider 'valid'
+  //pressure of 0 means no pressing!
+  if (p.z > ts.pressureThreshhold){
+    //Manual button zone
+    if( p.x >= manualPosX && p.x <= (manualPosY + manualWidth) && p.y >= manualPosY && p.y <= (manualPosY + manualHight)){
+      switch(mode){
+        case 'manual': //if mode is already manual then switch it to auto
+          Tft.fillRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLACK);
+          Tft.drawRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
+          Tft.drawString("MANUAL",10,210,2,BLUE);
+          mode = 'auto';
+          break;
+        case 'auto':
+          prevTempValue = NULL;
+          Tft.fillRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
+          Tft.drawString("MANUAL",10,210,2,WHITE);
+          mode = 'manual';
+          break;
       }
     }
+    if(mode == 'manual' && p.x >= incFanSpeedPosX && p.x <= (incFanSpeedPosX + incFanSpeedWidth) && p.y >= incFanSpeedPosY && p.y <= (incFanSpeedPosY + incFanSpeedHight)){
+      if(currentFanValue >= 255){
+      }
+      else{
+        currentFanValue += fanIncrement;
+        if(currentFanValue >= 255){
+          currentFanValue = 255;
+        }
+        Serial.print("Increase Fan Speed :"); Serial.println(currentFanValue);
+      }
+    }
+    else if( mode == 'manual' && p.x >= decFanSpeedPosX && p.x <= (decFanSpeedPosX + decFanSpeedWidth) && p.y >= decFanSpeedPosY && p.y <= (decFanSpeedPosY + decFanSpeedHight)){
+      if(currentFanValue <= 0){
+      }
+      else{
+        currentFanValue -= fanIncrement;
+        if(currentFanValue <= 0){
+          currentFanValue = 0;
+        }        
+        Serial.print("Decrease Fan Speed :"); Serial.println(currentFanValue);
+      }
+      //Serial.println("Decrease Fan Speed");
+    }
   }
+  //Fan control modes
+  switch (mode) {
+    case 'auto': {//temp control
+      unsigned long currentMillis = millis();
+      if(currentMillis - previousMillis > interval) {
+        // save the last time you blinked got temp
+        previousMillis = currentMillis;   
+        int temp = GetTemp();
+        if(isnan(temp)){
+            Tft.drawString("error",0,170,2,RED);
+            delay(1000);
+            Tft.drawString("error",0,170,2,BLUE);
+          return;
+        }
+        if(prevTempValue != temp){
+          String(temp).toCharArray(currentTemp, 4);
+          Tft.drawString(previousTemp,170,20,2,BLACK);
+          Tft.drawString(currentTemp,170,20,2,BLUE);
+          String(temp).toCharArray(previousTemp, 4);
+          prevTempValue = temp;
+          if(temp < tempMin) {   // if temp is lower than minimum temp
+            currentFanValue = 0;
+            analogWrite(fanPin, currentFanValue);
+            digitalWrite(fanPowerPin, LOW);
+            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
+            Tft.drawString("OFF",170,0,2,BLUE);
+            String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
+          } 
+          else if( (temp >= tempMin)  && (temp <= tempMax)){  // if temperature is higher than minimum temp
+            digitalWrite(fanPowerPin, HIGH);
+            currentFanValue = map(temp, tempMin, tempMax, 0, fanMax); // the actual speed of fan
+            String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
+            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
+            Tft.drawString(fanSpeed,170,0,2,BLUE);
+            String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
+            analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed
+          }
+          else if(temp > tempMax){
+            digitalWrite(fanPowerPin, HIGH);
+            currentFanValue = fanMax; // the actual speed of fan
+            String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
+            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
+            Tft.drawString(fanSpeed,170,0,2,BLUE);
+            String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
+            analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed  
+          }
+        }
+      }
+      break;
+    }
+    case 'manual':{ //manual fan speed
+      if(currentFanValue != previousFanValue){
+        analogWrite(fanPin, currentFanValue);
+        String(currentFanValue * 100 / 255).toCharArray(fanSpeed, 4);
+        Tft.drawString(prevFanSpeed,170,0,2,BLACK);
+        Tft.drawString(fanSpeed,170,0,2,BLUE);
+        String(currentFanValue * 100 / 255).toCharArray(prevFanSpeed, 4);
+        previousFanValue = currentFanValue;
+      }
+      break;
+    }
+  }
+
 }
+
+
 
 int GetTemp() {
   // Reading temperature or humidity takes about 250 milliseconds!
