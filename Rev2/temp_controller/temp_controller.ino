@@ -25,23 +25,25 @@
 //Driver IC: ST7781R
 //4-Wire resistive touch screen
 
-#include <stdint.h>
+ #include <Adafruit_GFX.h>    // Core graphics library
+#include <Adafruit_TFTLCD.h> // Hardware-specific library
+#include <Streaming.h>
 #include <TouchScreen.h>
-#include <TFT.h>
 
-#ifdef SEEEDUINO
-  #define YP A2   // must be an analog pin, use "An" notation!
-  #define XM A1   // must be an analog pin, use "An" notation!
-  #define YM 14   // can be a digital pin, this is A0
-  #define XP 17   // can be a digital pin, this is A3 
-#endif
+// The control pins for the LCD can be assigned to any digital or
+// analog pins...but we'll use the analog pins as this allows us to
+// double up the pins with the touch screen (see the TFT paint example).
+#define LCD_CS 12 // Chip Select goes to Analog 3
+#define LCD_CD 11 // Command/Data goes to Analog 2
+#define LCD_WR 10 // LCD Write goes to Analog 1
+#define LCD_RD 9 // LCD Read goes to Analog 0--A8 on teensy3,14 is A0 and is on the port we use
+#define LCD_RESET 13 // Can alternately just connect to Arduino's reset pin
 
-#ifdef MEGA
-  #define YP A2   // must be an analog pin, use "An" notation!
-  #define XM A1   // must be an analog pin, use "An" notation!
-  #define YM 54   // can be a digital pin, this is A0
-  #define XP 57   // can be a digital pin, this is A3 
-#endif 
+
+#define XP A1   // can be a digital pin and can reuse pins
+#define YP A2  // must be an analog pin, use "An" notation!
+#define XM A3  // must be an analog pin, use "An" notation!
+#define YM A4   // can be a digital pin and can reuse pins
 
 //Measured ADC values for (0,0) and (210-1,320-1)
 //TS_MINX corresponds to ADC value when X = 0
@@ -58,25 +60,26 @@
 // For better pressure precision, we need to know the resistance
 // between X+ and X- Use any multimeter to read it
 // The 2.8" TFT Touch shield has 300 ohms across the X plate
+Adafruit_TFTLCD Tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 // PWM pin for fan 1
-int fanPin = 44;   
+int fanPin = 4;   
 //Fan that controls fan transistor
 int fanPowerPin = 24;
 //Increase Fan Speed Draw Parameters
 int incFanSpeedPosX = 0;
-int incFanSpeedPosY = 250;
+int incFanSpeedPosY = 150;
 int incFanSpeedWidth = 110;
 int incFanSpeedHight = 60;
 //Decrease Fan Speed Draw Parameters
-int decFanSpeedPosX = 120;
+int decFanSpeedPosX = 0;
 int decFanSpeedPosY = 250;
 int decFanSpeedWidth = 110;
 int decFanSpeedHight = 60;
 //Manual button
 int manualPosX = 0;
-int manualPosY = 190;
+int manualPosY = 90;
 int manualWidth = 110;
 int manualHight = 60;
 
@@ -132,24 +135,28 @@ void setup(){
   
   dht.begin(); //init DHT
   
-  Tft.init();  //init TFT library
+   Tft.reset();
+   uint16_t identifier = Tft.readID();
+   Tft.begin(identifier);
+   Tft.setRotation(0);
+   Tft.fillScreen(TFTLCD_BLACK);
   
   //Fan Speed display
-  Tft.drawString("Fan Speed: ",0,0,2,BLUE);
-  Tft.drawString(fanSpeed,170,0,2,BLUE);
-  Tft.drawString("%",220,0,2,BLUE);
+  Tft(0,0,TFTLCD_BLUE,2) << "Fan Speed: ";
+  Tft(170,0,TFTLCD_BLUE,2) << fanSpeed;
+  Tft(220,0,TFTLCD_BLUE,2) << "%";
   //Increase Fan Speed
-  Tft.drawRectangle(incFanSpeedPosX, incFanSpeedPosY, incFanSpeedWidth,incFanSpeedHight,BLUE);
-  Tft.drawString("+",50,270,2,BLUE);
+  Tft.drawRect(incFanSpeedPosX, incFanSpeedPosY, incFanSpeedWidth,incFanSpeedHight,TFTLCD_BLUE);
+  Tft(incFanSpeedPosX,incFanSpeedPosY,TFTLCD_BLUE,2) << "+";
   //Decrease Fan Speed
-  Tft.drawRectangle(decFanSpeedPosX, decFanSpeedPosY, decFanSpeedWidth,decFanSpeedHight,BLUE);
-  Tft.drawString("-",170,270,2,BLUE);
+  Tft.drawRect(decFanSpeedPosX, decFanSpeedPosY, decFanSpeedWidth,decFanSpeedHight,TFTLCD_BLUE);
+  Tft(decFanSpeedPosX,decFanSpeedPosY,TFTLCD_BLUE,2) << "-";
   //Manual button
-  Tft.drawRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
-  Tft.drawString("MANUAL",10,210,2,BLUE);
+  Tft.drawRect(manualPosX, manualPosY, manualWidth,manualHight,TFTLCD_BLUE);
+  Tft(manualPosX,manualPosY,TFTLCD_BLUE,2) << "MANUAL";
   //Current Temp
-  Tft.drawString("Temp: ",0,20,2,BLUE);
-  Tft.drawString("*F",210,20,2,BLUE);
+  Tft(0,20,TFTLCD_BLUE,2) << "Temp: ";
+  Tft(210,20,TFTLCD_BLUE,2) << "*F";
 
   // initialize digital pin as an output.
   pinMode(fanPowerPin, OUTPUT);
@@ -159,9 +166,9 @@ void setup(){
   Serial.print(fanMax);
 }
 
-int mode = 'auto';
-bool manualSelected = false;
-bool autoSelected = true;
+int mode = 'manual';
+bool manualSelected = true;
+bool autoSelected = false;
 void loop(){
   Point p = ts.getPoint();
   p.x = map(p.x, TS_MINX, TS_MAXX, 240, 0);
@@ -169,19 +176,22 @@ void loop(){
   //we have some minimum pressure we consider 'valid'
   //pressure of 0 means no pressing!
   if (p.z > ts.pressureThreshhold){
+    Serial.print("X = "); Serial.print(p.x);
+    Serial.print("\tY = "); Serial.print(p.y);
+    Serial.print("\tPressure = "); Serial.println(p.z); 
     //Manual button zone
     if( p.x >= manualPosX && p.x <= (manualPosY + manualWidth) && p.y >= manualPosY && p.y <= (manualPosY + manualHight)){
       switch(mode){
         case 'manual': //if mode is already manual then switch it to auto
-          Tft.fillRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLACK);
-          Tft.drawRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
-          Tft.drawString("MANUAL",10,210,2,BLUE);
+          Tft.fillRect(manualPosX, manualPosY, manualWidth,manualHight,TFTLCD_BLACK);
+          Tft.drawRect(manualPosX, manualPosY, manualWidth,manualHight,TFTLCD_BLUE);
+          Tft(10,210,TFTLCD_BLUE,2) << "MANUAL";
           mode = 'auto';
           break;
         case 'auto':
           prevTempValue = NULL;
-          Tft.fillRectangle(manualPosX, manualPosY, manualWidth,manualHight,BLUE);
-          Tft.drawString("MANUAL",10,210,2,WHITE);
+          Tft.fillRect(manualPosX, manualPosY, manualWidth,manualHight,TFTLCD_BLUE);
+          Tft(10,210,TFTLCD_WHITE,2) << "MANUAL";
           mode = 'manual';
           break;
       }
@@ -219,31 +229,31 @@ void loop(){
         previousMillis = currentMillis;   
         int temp = GetTemp();
         if(isnan(temp)){
-            Tft.drawString("error",0,170,2,RED);
+            Tft(0,170,TFTLCD_RED,2) << "error";
             delay(1000);
-            Tft.drawString("error",0,170,2,BLUE);
+            Tft(0,170,TFTLCD_BLUE,2) << "error";
           return;
         }
         if(prevTempValue != temp){
           String(temp).toCharArray(currentTemp, 4);
-          Tft.drawString(previousTemp,170,20,2,BLACK);
-          Tft.drawString(currentTemp,170,20,2,BLUE);
+          Tft(170,20,TFTLCD_BLACK,2) << previousTemp;
+          Tft(170,20,TFTLCD_BLUE,2) << currentTemp;
           String(temp).toCharArray(previousTemp, 4);
           prevTempValue = temp;
           if(temp < tempMin) {   // if temp is lower than minimum temp
             currentFanValue = 0;
             analogWrite(fanPin, currentFanValue);
             digitalWrite(fanPowerPin, LOW);
-            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-            Tft.drawString("OFF",170,0,2,BLUE);
+            Tft(170,0,TFTLCD_BLACK,2) << prevFanSpeed;
+            Tft(170,0,TFTLCD_BLUE,2) << "OFF";
             String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
           } 
           else if( (temp >= tempMin)  && (temp <= tempMax)){  // if temperature is higher than minimum temp
             digitalWrite(fanPowerPin, HIGH);
             currentFanValue = map(temp, tempMin, tempMax, 0, fanMax); // the actual speed of fan
             String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
-            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-            Tft.drawString(fanSpeed,170,0,2,BLUE);
+            Tft(170,0,TFTLCD_BLACK,2) << prevFanSpeed;
+            Tft(170,0,TFTLCD_BLUE,2) << fanSpeed;
             String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
             analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed
           }
@@ -251,8 +261,8 @@ void loop(){
             digitalWrite(fanPowerPin, HIGH);
             currentFanValue = fanMax; // the actual speed of fan
             String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(fanSpeed, 4); // speed of fan to display on LCD
-            Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-            Tft.drawString(fanSpeed,170,0,2,BLUE);
+            Tft(170,0,TFTLCD_BLACK,2) << prevFanSpeed;
+            Tft(170,0,TFTLCD_BLUE,2) << fanSpeed;
             String(map(currentFanValue, 0, 255, 0, 100)).toCharArray(prevFanSpeed, 4);
             analogWrite(fanPin, currentFanValue);  // spin the fan at the fanSpeed speed  
           }
@@ -264,8 +274,8 @@ void loop(){
       if(currentFanValue != previousFanValue){
         analogWrite(fanPin, currentFanValue);
         String(currentFanValue * 100 / 255).toCharArray(fanSpeed, 4);
-        Tft.drawString(prevFanSpeed,170,0,2,BLACK);
-        Tft.drawString(fanSpeed,170,0,2,BLUE);
+        Tft(170,0,TFTLCD_BLACK,2) << prevFanSpeed;
+        Tft(170,0,TFTLCD_BLUE,2) << fanSpeed;
         String(currentFanValue * 100 / 255).toCharArray(prevFanSpeed, 4);
         previousFanValue = currentFanValue;
       }
